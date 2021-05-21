@@ -1,3 +1,8 @@
+// Copyright 2021 Bryan Baker
+
+// Compile using:
+// nvcc Ch2_vecadd.cu -o vecadd
+
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
@@ -43,7 +48,7 @@ int main() {
   vecAdd(A, B, C, N);
   t1 = wctime() - t1;
 
-  printf("Vector A sample: ");
+  /*printf("Vector A sample: ");
   for(i=0; i<10; i++)
     printf("%0.3f ", A[i]);
   printf("\n");
@@ -54,13 +59,14 @@ int main() {
   printf("Vector C sample: ");
   for(i=0; i<10; i++)
     printf("%0.3f ", C[i]);
-  printf("\n");
+  printf("\n");*/
 
-  printf("CPU sequential program:\n");
+  printf("CPU:\n");
   printf("Finished in %lf seconds.\n", t1);
   t1 *= (1.E+09);
   nops = (float) N;
   printf("Performance = %f GFLOPs\n", nops/t1);
+  printf("\n");
 
   for(i=0; i<N; i++)
     C[i] = 0.0;
@@ -80,6 +86,7 @@ int main() {
   t1 *= (1.E+09);
   nops = (float) N;
   printf("Performance = %f GFLOPs\n", nops/t1);
+  printf("\n");
 
   for(i=0; i<N; i++)
     C[i] = 0.0;
