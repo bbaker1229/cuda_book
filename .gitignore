@@ -2,3 +2,4 @@ a.out
 *.pgm
 greyscale
 vecadd
+imageblur
