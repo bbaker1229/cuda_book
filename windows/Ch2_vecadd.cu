@@ -1,0 +1,160 @@
+// Copyright 2021 Bryan Baker
+
+// Compile using:
+// nvcc Ch2_vecadd.cu -o vecadd
+
+#include <stdio.h>
+#include <math.h>
+#include <stdlib.h>
+#include <time.h>
+#include <windows.h> 
+
+const __int64 DELTA_EPOCH_IN_MICROSECS = 11644473600000000;
+
+__global__ void vecAddKernel(float *A, float *B, float *C, int n) {
+  int i = blockDim.x*blockIdx.x + threadIdx.x;
+  if(i<n) C[i] = A[i] + B[i];
+}
+
+void vecAdd(float *h_A, float *h_B, float *h_C, int n) {
+  for(int i = 0; i < n; i++) h_C[i] = h_A[i] + h_B[i];
+}
+
+struct timezone2
+{
+    __int32  tz_minuteswest; /* minutes W of Greenwich */
+    bool  tz_dsttime;     /* type of dst correction */
+};
+
+struct timeval2 {
+    __int32    tv_sec;         /* seconds */
+    __int32    tv_usec;        /* microseconds */
+};
+
+int gettimeofday(struct timeval2* tv/*in*/, struct timezone2* tz/*in*/)
+{
+    FILETIME ft;
+    __int64 tmpres = 0;
+    TIME_ZONE_INFORMATION tz_winapi;
+    int rez = 0;
+
+    ZeroMemory(&ft, sizeof(ft));
+    ZeroMemory(&tz_winapi, sizeof(tz_winapi));
+
+    GetSystemTimePreciseAsFileTime(&ft);
+
+    tmpres = ft.dwHighDateTime;
+    tmpres <<= 32;
+    tmpres |= ft.dwLowDateTime;
+
+    /*converting file time to unix epoch*/
+    tmpres /= 10;  /*convert into microseconds*/
+    tmpres -= DELTA_EPOCH_IN_MICROSECS;
+    tv->tv_sec = (__int32)(tmpres * 0.000001);
+    tv->tv_usec = (tmpres % 1000000);
+
+
+    //_tzset(),don't work properly, so we use GetTimeZoneInformation
+    rez = GetTimeZoneInformation(&tz_winapi);
+    tz->tz_dsttime = (rez == 2) ? true : false;
+    tz->tz_minuteswest = tz_winapi.Bias + ((rez == 2) ? tz_winapi.DaylightBias : 0);
+
+    return 0;
+}
+
+double wctime()
+{
+  struct timeval2 tv;
+  struct timezone2 tz;
+  gettimeofday(&tv, &tz);
+  return (tv.tv_sec + 1E-6 * tv.tv_usec);
+}
+
+int main() {
+  float *A, *B, *C, *d_A, *d_B, *d_C;
+  int i, N=10000000;
+  double t1;
+  float nops;
+
+  A = (float*)malloc(N*sizeof(float));
+  B = (float*)malloc(N*sizeof(float));
+  C = (float*)malloc(N*sizeof(float));
+  cudaMalloc((void**)&d_A, N*sizeof(float));
+  cudaMalloc((void**)&d_B, N*sizeof(float));
+  cudaMalloc((void**)&d_C, N*sizeof(float));
+
+  for(i=0; i<N; i++) {
+    A[i] = (float) rand() / (float) rand();
+    B[i] = (float) rand() / (float) rand();
+  }
+  for(i=0; i<N; i++)
+    C[i] = 0.0;
+
+  t1 = wctime();
+  vecAdd(A, B, C, N);
+  t1 = wctime() - t1;
+
+  /*printf("Vector A sample: ");
+  for(i=0; i<10; i++)
+    printf("%0.3f ", A[i]);
+  printf("\n");
+  printf("Vector B sample: ");
+  for(i=0; i<10; i++)
+    printf("%0.3f ", B[i]);
+  printf("\n");
+  printf("Vector C sample: ");
+  for(i=0; i<10; i++)
+    printf("%0.3f ", C[i]);
+  printf("\n");*/
+
+  printf("CPU:\n");
+  printf("Finished in %lf seconds.\n", t1);
+  t1 *= (1.E+09);
+  nops = (float) N;
+  printf("Performance = %f GFLOPs\n", nops/t1);
+  printf("\n");
+
+  for(i=0; i<N; i++)
+    C[i] = 0.0;
+
+  t1 = wctime();
+  cudaMemcpy(d_A, A, N*sizeof(float), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_B, B, N*sizeof(float), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_C, C, N*sizeof(float), cudaMemcpyHostToDevice);
+
+  vecAddKernel<<<ceil(N/1024.0), 1024>>>(d_A, d_B, d_C, N);
+
+  cudaMemcpy(C, d_C, N*sizeof(float), cudaMemcpyDeviceToHost);
+  t1 = wctime() - t1;
+
+  printf("Cuda with data transfer:\n");
+  printf("Finished in %lf seconds.\n", t1);
+  t1 *= (1.E+09);
+  nops = (float) N;
+  printf("Performance = %f GFLOPs\n", nops/t1);
+  printf("\n");
+
+  for(i=0; i<N; i++)
+    C[i] = 0.0;
+
+  cudaMemcpy(d_C, C, N*sizeof(float), cudaMemcpyHostToDevice);
+
+  t1 = wctime();
+  vecAddKernel<<<ceil(N/1024.0), 1024>>>(d_A, d_B, d_C, N);
+  t1 = wctime() - t1;
+
+  cudaMemcpy(C, d_C, N*sizeof(float), cudaMemcpyDeviceToHost);
+
+  printf("Cuda without data transfer:\n");
+  printf("Finished in %lf seconds.\n", t1);
+  t1 *= (1.E+09);
+  nops = (float) N;
+  printf("Performance = %f GFLOPs\n", nops/t1);
+
+  cudaFree(d_A);
+  cudaFree(d_B);
+  cudaFree(d_C);
+  free(A);
+  free(B);
+  free(C);
+}
